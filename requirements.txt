@@ -5,3 +5,4 @@ matplotlib~=3.7.2
 seaborn~=0.13.2
 pandas~=2.2.3
 pillow~=11.1.0
+plotly

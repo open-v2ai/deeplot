@@ -1,14 +1,14 @@
-import io
-import re
-from PIL import Image
-import logging
 import asyncio
+import io
+import logging
+import re
 from typing import AsyncGenerator
-from openai.types.responses import ResponseTextDeltaEvent
 
-from agents import Agent, Runner
 import gradio as gr
 import matplotlib
+from agents import Agent, Runner
+from openai.types.responses import ResponseTextDeltaEvent
+from PIL import Image
 
 # 设置 Matplotlib 使用 Agg 后端，避免 GUI 警告
 matplotlib.use('Agg')
