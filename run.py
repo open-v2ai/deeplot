@@ -1,104 +1,138 @@
-import io
 import re
-from PIL import Image
 import logging
 import asyncio
 from typing import AsyncGenerator
-from openai.types.responses import ResponseTextDeltaEvent
 
+import plotly.io as pio
+import plotly.graph_objects as go
+from openai.types.responses import ResponseTextDeltaEvent
 from agents import Agent, Runner
 import gradio as gr
-import matplotlib
-
-# 设置 Matplotlib 使用 Agg 后端，避免 GUI 警告
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 
 # 设置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)  # 改为 WARNING 级别
 logger = logging.getLogger(__name__)
 
 # 初始化全局会话上下文
 conversation_history = []
+
+# 预加载 Plotly 配置
+pio.templates.default = "plotly_white"  # 使用轻量级模板
+pio.renderers.default = "notebook"  # 设置默认渲染器
+
+# 设置 Plotly 配置
+pio.templates["plotly_white"].layout.update(
+    modebar=dict(
+        remove=['zoom', 'pan', 'select', 'lasso', 'zoomIn', 'zoomOut', 'autoScale', 'resetScale']
+    )
+)
 
 
 def extract_python_code(text):
     """
     从文本中提取 Python 代码块
     """
-    # 查找 ```python 和 ``` 之间的代码
     pattern = r'```(?:python)?(.*?)```'
     matches = re.findall(pattern, text, re.DOTALL)
 
     if matches:
         return matches[0].strip()
 
-    # 如果没有找到代码块，则尝试直接使用文本（假设整个文本是代码）
     return text.strip()
 
 
 def process_code(code):
     """
-    处理代码，注释掉 plt.show() 调用
+    处理代码，确保返回 plotly 图形对象
     """
-    # 替换 plt.show() 调用为注释
-    code = re.sub(r'plt\.show\(\)', '# plt.show() - 已被注释', code)
-    return code
+    # 处理代码缩进
+    indented_code = "\n".join("    " + line if line.strip() else line for line in code.split("\n"))
+    
+    # 将代码包装在一个函数中
+    wrapped_code = f"""
+def create_plot():
+{indented_code}
+    return fig
+
+fig = create_plot()
+"""
+    return wrapped_code
 
 
 def execute_plot_code(code):
     """
-    执行绘图代码并返回图像
+    执行绘图代码并返回 plotly 图形对象
     """
     try:
-        # 确保所有图形已关闭
-        plt.close('all')
-
         # 创建一个局部命名空间来执行代码
         local_vars = {}
         local_vars.update(globals())
 
-        # 确保 plt.figure() 被调用，以避免使用之前的图形
-        if "plt.figure" not in code and "figure(" not in code:
-            plt.figure()
-
         # 执行代码
         exec(code, globals(), local_vars)
-
-        # 保存图像到内存
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=100)
-        buf.seek(0)
-
-        # 将图像转换为 PIL Image 对象
-        img = Image.open(buf)
-        plt.close('all')  # 关闭所有图形，避免内存泄漏
-
-        return img
+        
+        # 获取返回的图形对象
+        fig = local_vars.get('fig')
+        if fig is None:
+            raise ValueError("代码没有返回 plotly 图形对象")
+        
+        # 优化图表配置
+        fig.update_layout(
+            autosize=True,
+            margin=dict(l=50, r=50, t=50, b=50),
+            height=None,
+            width=None,
+            # 减少重绘
+            uirevision=True,
+            # 优化渲染
+            showlegend=True,
+            hovermode='closest',
+            # 减少动画
+            transition=dict(duration=0),
+            # 使用轻量级模板
+            template="plotly_white",
+            # 减少交互性以提高性能
+            dragmode=False,
+            # 禁用不必要的功能
+            hoverdistance=100,
+            spikedistance=100
+        )
+        
+        # 优化数据点
+        for trace in fig.data:
+            if hasattr(trace, 'x') and len(trace.x) > 50:  # 进一步降低到50个点
+                # 如果数据点过多，进行降采样
+                step = len(trace.x) // 50 + 1
+                trace.x = trace.x[::step]
+                if hasattr(trace, 'y'):
+                    trace.y = trace.y[::step]
+        
+        return fig
     except Exception as e:
-        plt.close('all')  # 确保关闭任何打开的图形
         raise e
 
 
 # 创建绘图专家代理
 visualization_agent = Agent(
     name="数据可视化专家",
-    instructions="""你是一个专业的数据可视化助手，专长于使用 Python 的 matplotlib 和 seaborn 库创建图表和可视化。
+    instructions="""你是一个专业的数据可视化助手，专长于使用 Python 的 plotly 库创建交互式图表。
 
 1. 分析用户的可视化需求，生成清晰易懂的 Python 代码。
 2. 总是使用英文标点符号，不使用中文标点符号。
 3. 代码必须符合 Python 语法，确保能够正确执行。
-4. 不要在代码中包含 plt.show() 调用，因为图像会自动保存和显示。
+4. 使用 plotly.graph_objects 创建图表，并确保返回 fig 对象。
 5. 当可能时，包含示例数据以创建有意义的可视化。
-6. 为图表添加合适的标题、标签和图例，美化视觉效果，调整字体大小和颜色，使视觉效果更好。
+6. 为图表添加合适的标题、标签和图例，美化视觉效果。
 7. 代码应该包含必要的注释，解释关键步骤。
 8. 确保使用适合数据类型的图表类型。
 9. 回复时，首先简短解释你的实现方案，然后提供代码。
 10. 如果用户要求改进图表，请参考之前的对话和代码，进行有针对性的改进。
+11. 使用中文回复。
+12. 我们使用了 plotly==5.24.1，请使用这个版本。
 
 始终以代码块格式回复，使用 ```python 和 ``` 标记代码。
 """,
-    model="gpt-4o",
+    model="gpt-4o-mini",
 )
 
 
@@ -126,7 +160,6 @@ async def generate_plot_with_agent(user_input, history=None):
 
         # 获取回复内容
         message_content = result.final_output
-        print(message_content)
 
         # 将新对话添加到历史记录
         conversation_history.append({"role": "user", "content": user_input})
@@ -137,7 +170,7 @@ async def generate_plot_with_agent(user_input, history=None):
         code = process_code(code)
 
         # 执行代码生成图表
-        img = execute_plot_code(code)
+        fig = execute_plot_code(code)
 
         # 提取解释部分
         explanation = ""
@@ -146,7 +179,7 @@ async def generate_plot_with_agent(user_input, history=None):
 
         logger.info("图表生成成功")
         return {
-            "image": img,
+            "figure": fig,
             "code": code,
             "explanation": explanation,
             "full_response": message_content
@@ -173,12 +206,12 @@ def chat_and_plot(user_message, chat_history, code_output):
         message = result[
             "full_response"] if "full_response" in result else "图表已生成！可以在右侧查看生成的图表和代码。您可以修改代码后点击'执行代码'按钮重新生成图表，或继续提问进行图表改进。"
         chat_history[-1] = (user_message, message)
-        return chat_history, result["image"], result["code"]
+        return chat_history, result["figure"], result["code"]
     else:
         # 生成失败，result 包含错误信息
         message = result
         chat_history[-1] = (user_message, message)
-        # 返回空图像和错误信息
+        # 返回空图表和错误信息
         return chat_history, None, message
 
 
@@ -190,7 +223,7 @@ def execute_custom_code(code, chat_history):
         # 处理代码
         processed_code = process_code(code)
         # 执行代码生成图表
-        img = execute_plot_code(processed_code)
+        fig = execute_plot_code(processed_code)
 
         # 更新全局对话历史中最后一条助手消息的代码部分
         global conversation_history
@@ -209,7 +242,7 @@ def execute_custom_code(code, chat_history):
 
         # 添加执行结果到聊天历史
         chat_history.append({"role": "assistant", "content": "代码已执行，图表已更新。您可以继续提问进行进一步改进。"})
-        return img, chat_history
+        return fig, chat_history
     except Exception as e:
         error_message = f"执行代码时出错: {str(e)}"
         # 将错误消息添加到聊天历史
@@ -261,7 +294,7 @@ async def generate_plot_with_agent_stream(user_input) -> AsyncGenerator[dict, No
                     yield {
                         "full_response": full_response,
                         "code": None,
-                        "image": None,
+                        "figure": None,
                         "is_complete": False
                     }
 
@@ -274,14 +307,14 @@ async def generate_plot_with_agent_stream(user_input) -> AsyncGenerator[dict, No
         if code and any(keyword in code.lower() for keyword in ['plt.', 'plot', 'figure', 'subplot', 'seaborn']):
             # 包含绘图相关代码，执行绘图操作
             code = process_code(code)
-            img = execute_plot_code(code)
+            fig = execute_plot_code(code)
             logger.info("图表生成成功")
 
             # 返回最终的完整结果
             yield {
                 "full_response": full_response,
                 "code": code,
-                "image": img,
+                "figure": fig,
                 "is_complete": True
             }
         else:
@@ -289,7 +322,7 @@ async def generate_plot_with_agent_stream(user_input) -> AsyncGenerator[dict, No
             yield {
                 "full_response": full_response,
                 "code": code if code else None,
-                "image": None,
+                "figure": None,
                 "is_complete": True
             }
 
@@ -301,7 +334,7 @@ async def generate_plot_with_agent_stream(user_input) -> AsyncGenerator[dict, No
         yield {
             "full_response": error_message,
             "code": None,
-            "image": None,
+            "figure": None,
             "is_complete": True,
             "error": True
         }
@@ -322,16 +355,16 @@ async def chat_and_plot_stream(user_message, chat_history, code_output):
             current_response = result["full_response"]
             chat_history[-1]["content"] = current_response
 
-            # 如果生成完成，检查是否有图像和代码
+            # 如果生成完成，检查是否有图表和代码
             if result["is_complete"]:
                 if "error" in result and result["error"]:
                     # 处理错误情况
                     yield chat_history, None, result.get("code", "")
                 else:
-                    # 处理成功情况，可能有或没有图像
-                    yield chat_history, result.get("image"), result.get("code", code_output)
+                    # 处理成功情况，可能有或没有图表
+                    yield chat_history, result.get("figure"), result.get("code", code_output)
             else:
-                # 流式更新聊天内容，但不更新图像和代码
+                # 流式更新聊天内容，但不更新图表和代码
                 yield chat_history, None, code_output
 
     except Exception as e:
@@ -340,35 +373,80 @@ async def chat_and_plot_stream(user_message, chat_history, code_output):
         yield chat_history, None, code_output
 
 
+def create_empty_plot():
+    """
+    创建一个空白图表
+    """
+    fig = go.Figure()
+    fig.update_layout(
+        autosize=True,
+        margin=dict(l=50, r=50, t=50, b=50),
+        height=None,
+        width=None,
+        # 减少重绘
+        uirevision=True,
+        # 优化渲染
+        showlegend=False,
+        # 减少动画
+        transition=dict(duration=0),
+        # 使用轻量级模板
+        template="plotly_white",
+        # 减少交互性以提高性能
+        dragmode=False,
+        # 禁用不必要的功能
+        hoverdistance=100,
+        spikedistance=100
+    )
+    return fig
+
+
 with gr.Blocks(title="Deeplot", theme="soft") as app:
-    gr.Markdown("## 🎨 Deeplot")
-    gr.Markdown("输入您的绘图需求，Deeplot 将生成对应的图表和代码。您可以持续对话来改进图表。")
+    # 添加 Plotly JavaScript
+    gr.HTML("""
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    """)
+    
+    gr.Markdown("# 📊 Deeplot: 对话生成图表")
+    gr.Markdown("输入您的绘图需求，Deeplot 将生成对应的图表和代码。您还可以持续对话来改进图表。")
 
     with gr.Row():
         with gr.Column(scale=1):
+            
             # 更新 Chatbot 组件，使用 messages 类型
             chatbot = gr.Chatbot(
-                label="与 Deeplot 交流",
-                height=500,
+                label="与 Deeplot 对话",
+                height=400,
                 type="messages"  # 使用新的消息格式
             )
+
+            # 添加快速输入按钮
+            with gr.Row():
+                quick_btn1 = gr.Button("例子：GDP 增长折线图")
+
             user_input = gr.Textbox(
-                label="请输入您的绘图需求或改进建议",
-                placeholder="例如：绘制一个展示不同月份销售额的柱状图，添加适当的标题和标签"
+                label="输入绘图需求",
+                placeholder="例如：绘制一个展示不同月份销售额的柱状图"
             )
             with gr.Row():
-                send_btn = gr.Button("发送", variant="primary")
                 clear_btn = gr.Button("清空对话")
+                send_btn = gr.Button("发送", variant="primary")
+            
+            # 快速输入按钮点击事件
+            quick_btn1.click(
+                fn=lambda: "绘制一个展示2010-2023年中国GDP增长的折线图，并添加网格线和数据标签。",
+                inputs=[],
+                outputs=[user_input]
+            )
 
-        with gr.Column(scale=1):
+        with gr.Column(scale=2):
             with gr.Tab("图表"):
-                plot_output = gr.Image(label="生成的图表", type="pil")
+                plot_output = gr.Plot(value=create_empty_plot())  # 使用空白图表作为初始值
             with gr.Tab("代码"):
-                code_output = gr.Code(language="python", label="生成的代码", interactive=True)
+                code_output = gr.Code(language="python", interactive=True)
                 execute_btn = gr.Button("执行代码", variant="secondary")
 
     # 添加使用说明
-    with gr.Accordion("使用说明", open=False):
+    with gr.Accordion("🔔 使用说明", open=False):
         gr.Markdown("""
         ### 🔍 如何使用
         1. 在输入框中描述您想要创建的图表
@@ -387,7 +465,6 @@ with gr.Blocks(title="Deeplot", theme="soft") as app:
         - "使用小提琴图比较不同组别的数据分布"
         - "能否将图表颜色改为蓝色系？"
         - "请给图表添加网格线，使数据更易读"
-        - "可以将图例移到右上角吗？"
         """)
 
     # 发送按钮绑定流式函数

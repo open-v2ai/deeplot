@@ -1,7 +1,11 @@
 openai~=1.66.3
 openai-agents~=0.0.4
-gradio~=5.20.1
-matplotlib~=3.7.2
-seaborn~=0.13.2
+gradio~=5.22.0
+plotly~=5.24.1
+ipython~=8.32.0
+nbformat~=5.10.4
 pandas~=2.2.3
-pillow~=11.1.0
+numpy~=1.25.0
+seaborn~=0.13.2
+matplotlib~=3.8.0
+yfinance~=0.2.55
