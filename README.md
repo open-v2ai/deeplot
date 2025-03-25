@@ -15,7 +15,7 @@
 
 ## 2 安装说明
 
-> 推荐使用 Python 3.11 及新版本。
+>⚠️ 请使用 Python 3.11 及更新版本。
 
 ### 2.1 本地部署
 
@@ -35,8 +35,12 @@
 3. 运行应用：
 
     ```bash
+    # 设置 OpenAI API Key
     export OPENAI_API_KEY="sk-******"
-    export OPENAI_BASE_URL="https://api.openai.com"
+    # 如果需要使用代理，请设置 OPENAI_BASE_URL
+    export OPENAI_BASE_URL="https://api.openai.com/v1"
+
+    # 运行应用
     python run.py
     ```
 
@@ -46,6 +50,7 @@
 
     ```bash
     git clone https://github.com/open-v2ai/deeplot.git
+
     cd deeplot
     ```
 
