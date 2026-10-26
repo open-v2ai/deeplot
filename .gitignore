@@ -164,3 +164,19 @@ log/
 .DS_Store
 *.prod.*
 script/
+data/
+
+# Private configuration and generated local files
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.tsbuildinfo
+.DS_Store
+.idea/
+.vscode/
+
+backend/data/
+frontend/data/
+backend/log/
+frontend/log/

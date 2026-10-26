@@ -2,3 +2,10 @@ gradio
 matplotlib
 pillow
 seaborn
+geopandas
+pandas
+pypalettes
+highlight_text
+pyfonts
+drawarrow
+pywaffle

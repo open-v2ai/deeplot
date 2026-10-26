@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deepplot: Python 代码可视化工具</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+    <style>
+        /* 基本样式 */
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* 布局容器 */
+        .editor-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        /* 代码编辑器区域 */
+        .code-editor {
+            width: 40%;
+            min-width: 300px;
+        }
+
+        /* 结果区域 */
+        .result-container {
+            width: 40%;
+            min-width: 300px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 代码输入区域 */
+        #code-input {
+            width: 100%;
+            height: 200px;
+            font-family: monospace;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+        }
+
+        /* CodeMirror 编辑器高度 */
+        .CodeMirror {
+            height: 400px !important;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        /* 提交按钮 */
+        #submit-btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin-top: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        #submit-btn:hover {
+            background-color: #45a049;
+        }
+
+        #submit-btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        /* 加载指示器 */
+        .loading-indicator {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 2s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 结果区域 */
+        .result-section {
+            margin-top: 30px;
+            display: none;
+        }
+
+        /* 图像容器 */
+        #result-container {
+            width: 100%;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        /* 图像样式 */
+        #result-image {
+            max-width: 100%;
+            max-height: 400px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            object-fit: contain;
+        }
+
+        .image-source {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .error-message {
+            color: red;
+            white-space: pre-wrap;
+            margin-top: 20px;
+            display: none;
+        }
+
+        /* 状态信息 */
+        .status-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        /* 隐藏元素 */
+        .hidden {
+            display: none;
+        }
+
+        /* 响应式布局 */
+        @media (max-width: 768px) {
+            .code-editor, .result-container {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Deepplot: Python 代码可视化工具</h1>
+            <p>输入 Python 代码，点击「执行代码」按钮查看结果。支持 matplotlib、seaborn 等绘图库。</p>
+        </header>
+
+        <main>
+            <div class="editor-container">
+                <div class="code-editor">
+                    <h2>Python代码</h2>
+                    <textarea id="code-input"></textarea>
+                    <button id="submit-btn" class="primary-button">执行代码</button>
+
+                    <div class="examples">
+                        <h3>示例代码</h3>
+                        <div class="example-buttons">
+                            <button class="example-button" data-example="0">正弦波</button>
+                            <button class="example-button" data-example="1">柱状图</button>
+                            <button class="example-button" data-example="2">饼图</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="result-container">
+                    <h2>生成的图像</h2>
+                    <div id="result-container" style="display: none; text-align: center;">
+                        <div id="image-wrapper">
+                            <img id="result-image" alt="生成的图像" />
+                            <p id="image-source" style="font-size: 12px; color: #666; margin-top: 5px;"></p>
+                        </div>
+                        <div id="image-error" style="color: red; display: none; padding: 10px; border: 1px solid #ffcccc; background-color: #fff8f8; border-radius: 4px; margin-top: 10px;">
+                            <p><strong>图像加载失败</strong></p>
+                            <p>可能的原因:</p>
+                            <ul style="text-align: left; margin-top: 5px;">
+                                <li>图像文件不存在或路径错误</li>
+                                <li>后端服务未正确生成图像</li>
+                                <li>前端无法访问图像存储位置</li>
+                            </ul>
+                            <p>请尝试刷新页面或重新执行代码</p>
+                        </div>
+                    </div>
+                    <div id="loading" class="loading hidden">处理中...</div>
+                    <div id="error-message" class="error-message hidden" style="color: red; white-space: pre-wrap; margin-top: 20px; padding: 10px; border: 1px solid #ffcccc; background-color: #fff8f8; border-radius: 4px;"></div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Deepplot - 基于 Python 的数据可视化工具</p>
+        </footer>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+    <script src="/static/js/fix.js"></script>
+</body>
+</html>

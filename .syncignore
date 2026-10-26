@@ -1,0 +1,12 @@
+.git/
+.env
+.env.*
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+data/
+backend/data/
+frontend/data/
+log/
+*.log
