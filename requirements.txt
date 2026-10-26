@@ -1,7 +1,8 @@
-openai~=1.66.3
+openai~=1.66.5
 openai-agents~=0.0.4
-gradio~=5.20.1
-matplotlib~=3.7.2
+gradio~=5.22.0
+numpy~=1.26.4
+matplotlib~=3.9.3
 seaborn~=0.13.2
 pandas~=2.2.3
 pillow~=11.1.0

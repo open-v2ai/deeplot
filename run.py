@@ -341,6 +341,18 @@ async def chat_and_plot_stream(user_message, chat_history, code_output):
 
 
 with gr.Blocks(title="Deeplot", theme="soft") as app:
+    # 添加 Google Analytics 跟踪代码
+    gr.HTML("""
+        <!-- Google Analytics -->
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-4VZFMV32S9"></script>
+        <script>
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-4VZFMV32S9');
+        </script>
+    """)
+
     gr.Markdown("## 🎨 Deeplot")
     gr.Markdown("输入您的绘图需求，Deeplot 将生成对应的图表和代码。您可以持续对话来改进图表。")
 
